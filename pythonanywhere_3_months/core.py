@@ -111,6 +111,7 @@ def run(
         print("Done!", file=sys.stderr)
     except Exception:
         traceback.print_exc()
+        sys.exit(1)
     finally:
         if driver:
             driver.quit()
