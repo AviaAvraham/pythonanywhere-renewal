@@ -55,4 +55,4 @@ jobs:
         cat "$XDG_DATA_HOME/pythonanywhere_credentials.yaml"
         #python3 -m pip uninstall -y selenium
         #python3 -m pip install --user selenium==3.14.0
-        pythonanywhere_3_months -Hc $(which chromedriver) >/dev/null
+        pythonanywhere_3_months -Hc $(which chromedriver)
