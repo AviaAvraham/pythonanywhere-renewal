@@ -13,4 +13,5 @@ last_run_at_file_name: str = os.path.join(local_directory, "pythonanywhere_lastr
 last_run_at_absolute_path: str = os.path.abspath(
     os.path.join(Path.home(), last_run_at_file_name)
 )
-login_page: str = "https://www.pythonanywhere.com/login/"
+base_url: str = "https://www.pythonanywhere.com"
+login_page: str = base_url + "/login/"
