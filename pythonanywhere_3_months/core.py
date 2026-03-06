@@ -7,16 +7,17 @@ import logging
 import argparse
 from time import time
 from pathlib import Path
-from typing import Tuple, Optional, Union
+from typing import Tuple
 
 import yaml
-from selenium import webdriver
-from selenium.webdriver.common.by import By
+import requests
 
 from . import (
     last_run_at_absolute_path,
     login_page,
 )
+
+BASE_URL = "https://www.pythonanywhere.com"
 
 
 def setup_debug_logging() -> None:
@@ -25,42 +26,24 @@ def setup_debug_logging() -> None:
     )
 
 
-def create_webdriver(
-    chromedriver_path: Union[str, None], hide: bool
-) -> webdriver.Chrome:
-    """Creates a webdriver, hides if requested."""
-    options = webdriver.ChromeOptions()
-    if hide:
-        options.add_argument("headless")
-        options.add_argument("disable-gpu")
-        options.add_argument("window-size=1920x1080")
-        logging.debug("Creating hidden chrome browser")
-    service: Optional[webdriver.ChromeService] = None
-    if chromedriver_path is not None:
-        service = webdriver.ChromeService(chromedriver_path)
-        logging.debug("Using custom chromedriver path: {}".format(chromedriver_path))
-    return webdriver.Chrome(options=options, service=service)  # type: ignore
-
-
-def get_options() -> Tuple[bool, str]:
+def get_options() -> Tuple[str]:
     """Gets options from user"""
     parser = argparse.ArgumentParser(
-        description="Clicks the 'Run until 3 months from today' on pythonanywhere"
+        description="Extends the PythonAnywhere web app expiry"
     )
     parser.add_argument(
-        "-H", "--hidden", help="Hide the ChromeDriver.", action="store_true"
+        "-H", "--hidden", help="(kept for backwards compat, ignored)",
+        action="store_true"
     )
     parser.add_argument(
-        "-c",
-        "--chromedriver-path",
-        help="Provides the location of ChromeDriver. Should probably be the full path.",
+        "-c", "--chromedriver-path",
+        help="(kept for backwards compat, ignored)",
         default=None,
     )
     parser.add_argument("-d", "--debug", help="Prints debug logs", action="store_true")
     args = parser.parse_args()
     if args.debug:
         setup_debug_logging()
-    logging.debug("Custom chromedriver path: {}".format(args.chromedriver_path))
     return args.hidden, args.chromedriver_path
 
 
@@ -73,38 +56,61 @@ def get_credentials(filepath: str) -> Tuple[str, str]:
     return creds["username"], creds["password"]
 
 
-# global variables so someone can monkey patch
-# if they want to -- in case this breaks
-LOGIN_ID = "id_auth-username"
-PASSWORD_ID = "id_auth-password"
-LOGIN_BUTTON = "id_next"
-RUN_BUTTON_SELECTOR = "input.webapp_extend[type='submit']"
-
-
-# encapsulate main functionality, can import any use in code instead
-# of running from cmdline
 def run(
-    username: str, password: str, chromedriver_path: str, use_hidden: bool = False
+    username: str, password: str, chromedriver_path: str = None,
+    use_hidden: bool = False
 ) -> None:
-    driver: Optional[webdriver.Chrome] = None
     try:
-        driver = create_webdriver(chromedriver_path, use_hidden)
+        session = requests.Session()
+
+        # Get login page for CSRF token
+        login_resp = session.get(login_page)
+        login_resp.raise_for_status()
+        csrf_token = session.cookies["csrftoken"]
+        logging.debug("Got CSRF token from login page")
 
         # Login
-        driver.get(login_page)
-        email_input = driver.find_element(By.ID, LOGIN_ID)
-        password_input = driver.find_element(By.ID, PASSWORD_ID)
-        email_input.send_keys(username)
-        password_input.send_keys(password)
-        driver.find_element(By.ID, LOGIN_BUTTON).click()
+        login_data = {
+            "csrfmiddlewaretoken": csrf_token,
+            "auth-username": username,
+            "auth-password": password,
+            "login_view-current_step": "auth",
+        }
+        resp = session.post(
+            login_page,
+            data=login_data,
+            headers={"Referer": login_page},
+        )
+        resp.raise_for_status()
+        if "/login/" in resp.url:
+            print("Login failed - still on login page", file=sys.stderr)
+            sys.exit(1)
 
-        # Go to "Web" page
-        driver.get(driver.current_url + "/webapps")
+        # Extract actual username from redirect URL (login may use email)
+        # e.g. https://www.pythonanywhere.com/user/Avia2292/
+        pa_username = resp.url.split("/user/")[1].split("/")[0]
+        print("Logged in as {}".format(pa_username), file=sys.stderr)
 
-        # Click 'Run until 3 months from today'
-        driver.find_element(By.CSS_SELECTOR, RUN_BUTTON_SELECTOR).click()
+        # Get webapps page for fresh CSRF token
+        webapps_url = "{}/user/{}/webapps/".format(BASE_URL, pa_username)
+        resp = session.get(webapps_url)
+        resp.raise_for_status()
+        csrf_token = session.cookies["csrftoken"]
 
-        # save current time to 'last run time file', so we can check if we need to run this again
+        # Extend the webapp
+        extend_url = "{}/user/{}/webapps/{}.pythonanywhere.com/extend".format(
+            BASE_URL, pa_username, pa_username
+        )
+        resp = session.post(
+            extend_url,
+            data={"csrfmiddlewaretoken": csrf_token},
+            headers={"Referer": webapps_url},
+        )
+        resp.raise_for_status()
+        print("Extend response: {} {}".format(resp.status_code, resp.url),
+              file=sys.stderr)
+
+        # save current time to 'last run time file'
         with open(last_run_at_absolute_path, "w") as f:
             f.write(str(time()))
 
@@ -112,6 +118,3 @@ def run(
     except Exception:
         traceback.print_exc()
         sys.exit(1)
-    finally:
-        if driver:
-            driver.quit()
