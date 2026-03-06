@@ -56,7 +56,7 @@ def run(username: str, password: str) -> None:
 
             # Extract actual username from redirect URL (login may use email)
             pa_username = resp.url.split("/user/")[1].split("/")[0]
-            print("Logged in as {}".format(pa_username), file=sys.stderr)
+            print("Logged in successfully", file=sys.stderr)
 
             # Reuse CSRF token from login for the extend POST
             csrf_token = session.cookies["csrftoken"]
@@ -70,7 +70,7 @@ def run(username: str, password: str) -> None:
                 headers={"Referer": webapps_url},
             )
             resp.raise_for_status()
-            print("Extend response: {} {}".format(resp.status_code, resp.url),
+            print("Extend response: {}".format(resp.status_code),
                   file=sys.stderr)
 
             # save current time to 'last run time file'

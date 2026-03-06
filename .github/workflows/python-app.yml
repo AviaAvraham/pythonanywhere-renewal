@@ -37,7 +37,6 @@ jobs:
     - name: Run renewal
       run: |
         set -e
-        python3 -m pip install --user ./
         export XDG_DATA_HOME=/home/runner
         echo "username: ${{ secrets.USERNAME }}" > "$XDG_DATA_HOME/pythonanywhere_credentials.yaml"
         echo "password: ${{ secrets.PASSWORD }}" >> "$XDG_DATA_HOME/pythonanywhere_credentials.yaml"
@@ -45,7 +44,7 @@ jobs:
         for attempt in {1..3}; do
           echo "Attempt $attempt/3"
           set +e
-          pythonanywhere_3_months 2>&1 | tee /tmp/output.log
+          python -m pythonanywhere_3_months 2>&1 | tee /tmp/output.log
           result=${PIPESTATUS[0]}
           set -e
           if [[ $result -eq 0 ]]; then
